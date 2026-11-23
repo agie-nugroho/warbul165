@@ -2,7 +2,28 @@
 <html lang="id">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#0e0f12" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Kasir WARBUL" />
+    <script>
+      /* Terapkan tema sebelum render supaya tidak berkedip */
+      try {
+        var t = localStorage.getItem("warbul_tema");
+        if (
+          !t &&
+          window.matchMedia &&
+          matchMedia("(prefers-color-scheme: light)").matches
+        )
+          t = "terang";
+        document.documentElement.dataset.tema = t || "gelap";
+      } catch (e) {}
+    </script>
     <title>Kasir WARBUL 165</title>
     <link rel="stylesheet" href="style.css" />
   </head>
@@ -24,7 +45,10 @@
     </div>
 
     <header>
-      <h1>WARBUL 165</h1>
+      <div class="brand">
+        <span class="mark" aria-hidden="true">W</span>
+        <h1>WARBUL 165</h1>
+      </div>
 
       <!-- Tombol hamburger -->
       <button
@@ -44,7 +68,13 @@
         <button data-t="menu">Menu</button>
       </nav>
 
-      <button id="tema" aria-label="Ganti tema"></button>
+      <div class="hr">
+        <div id="hariChip" class="chip" title="Penjualan hari ini"></div>
+        <span id="onl" class="onl" data-s="on"
+          ><i></i><em id="onlT">Online</em></span
+        >
+        <button id="tema" aria-label="Ganti tema"></button>
+      </div>
     </header>
 
     <main id="utama">
@@ -59,6 +89,7 @@
           />
 
           <div class="cats" id="cats">
+            <button data-k="top">★ Terlaris</button>
             <button data-k="panas" class="on">Minuman Panas</button>
             <button data-k="dingin">Minuman Dingin</button>
             <button data-k="makanan">Makanan</button>
@@ -67,29 +98,53 @@
           <div id="menuGrid"></div>
         </div>
 
+        <div id="sheetBg"></div>
+
         <aside class="card" id="cart">
           <button id="closeSheet">Tutup ▾</button>
-          <h2>Pesanan</h2>
+          <div class="ch">
+            <h2>Pesanan</h2>
+            <button id="lihatTahan" class="mini" type="button">
+              Ditahan <b id="nTahan">0</b>
+            </button>
+          </div>
+
+          <div class="seg" id="tipe">
+            <button data-p="Makan di tempat" class="on">Makan di tempat</button>
+            <button data-p="Bawa pulang">Bawa pulang</button>
+          </div>
+
           <div id="lines"></div>
 
           <input
             id="catatan"
             placeholder="Catatan (nama pelanggan / no. meja)"
-            style="margin-top: 10px"
           />
+          <input
+            id="diskon"
+            inputmode="text"
+            autocomplete="off"
+            placeholder="Diskon (contoh: 5000 atau 10%)"
+            aria-label="Diskon"
+          />
+
+          <div class="sr"><span>Subtotal</span><span id="sub">Rp 0</span></div>
+          <div class="sr" id="rDis" hidden>
+            <span>Diskon</span><span id="dis" class="good">- Rp 0</span>
+          </div>
 
           <div class="total">
             <span>Total</span>
             <b id="total">Rp 0</b>
           </div>
 
-          <div class="cats" id="metode">
+          <div class="seg" id="metode">
             <button data-m="Tunai" class="on">Tunai</button>
             <button data-m="QRIS">QRIS</button>
             <button data-m="Transfer">Transfer</button>
           </div>
 
-          <label for="bayar" style="color: var(--mt); font-size: 14px">
+          <label for="bayar" style="color: var(--mt); font-size: 13px">
             Uang Diterima
           </label>
 
@@ -103,6 +158,7 @@
 
           <div class="row">
             <button class="dng" id="kosong">Kosongkan</button>
+            <button id="tahan" type="button">Tahan</button>
             <button class="pri" id="btnBayar" disabled>Bayar</button>
           </div>
         </aside>
@@ -168,6 +224,12 @@
       <section id="vMenu" hidden>
         <div class="card">
           <div class="bar">
+            <input
+              id="cariMenu"
+              type="search"
+              placeholder="Cari menu…"
+              aria-label="Cari menu"
+            />
             <button class="pri" id="tambahMenu">+ Tambah Menu</button>
             <button id="backup">Cadangkan Data</button>
             <button id="restore">Pulihkan Data</button>
@@ -251,9 +313,8 @@
 
         <div id="strukBtn">
           <button class="pri" id="cetak">Cetak Struk</button>
-          <button id="baru" style="background: #ddd; color: #111">
-            Transaksi Baru
-          </button>
+          <button id="wa" type="button">Kirim WhatsApp</button>
+          <button id="baru" class="ghost">Transaksi Baru</button>
         </div>
       </div>
     </div>
@@ -296,7 +357,18 @@
       </div>
     </div>
 
-    <div id="toast"></div>
+    <!-- Modal pesanan ditahan -->
+    <div class="modal" id="modalTahan">
+      <div class="box">
+        <h3>Pesanan ditahan</h3>
+        <div id="listTahan"></div>
+        <div class="row" style="margin-top: 16px">
+          <button id="tTutup">Tutup</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="toast" role="status" aria-live="polite"></div>
 
     <!-- Supabase -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>

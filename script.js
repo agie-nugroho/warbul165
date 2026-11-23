@@ -242,6 +242,11 @@ let cart = [];
 let kat = "panas";
 let bayar = 0;
 let editId = null;
+let tipe = "Makan di tempat";
+let strukAktif = null;
+let ditahan = baca("warbul_hold", []);
+
+if (!Array.isArray(ditahan)) ditahan = [];
 
 const simpanMenu = () => {
   tulis("warbul_menu", menu);
@@ -407,39 +412,86 @@ document.querySelectorAll("#cats button").forEach(
 
 $("#cari").oninput = renderMenu;
 
+/* Jumlah terjual per menu (untuk tab Terlaris) */
+
+function jualPerMenu() {
+  const c = {};
+
+  trx.forEach((t) =>
+    t.item.forEach((i) => {
+      let m = null;
+
+      menu.forEach((x) => {
+        if (
+          (i.nama === x.nama || i.nama.startsWith(x.nama + " ")) &&
+          (!m || x.nama.length > m.nama.length)
+        )
+          m = x;
+      });
+
+      if (m) c[m.id] = (c[m.id] || 0) + i.qty;
+    }),
+  );
+
+  return c;
+}
+
+function tombol(m, k) {
+  let b = "";
+
+  if (k === "panas" && m.kat === "minuman" && m.panas > 0)
+    b = `<button onclick="tambah('${m.id}','panas')">Panas <span>${rp(m.panas)}</span></button>`;
+
+  if (k === "dingin" && m.kat === "minuman" && m.dingin > 0)
+    b = `<button onclick="tambah('${m.id}','dingin')">Dingin <span>${rp(m.dingin)}</span></button>`;
+
+  if (k === "makanan" && m.kat === "makanan") {
+    b = `<button onclick="tambah('${m.id}','main')">Pesan <span>${rp(m.harga)}</span></button>`;
+
+    m.tambahan.forEach(
+      (t, i) =>
+        (b += `<button class="ex" onclick="tambah('${m.id}','ex${i}')">${esc(t.nama)} <span>+${rp(t.harga)}</span></button>`),
+    );
+  }
+
+  return b;
+}
+
 function renderMenu() {
   const q = $("#cari").value.trim().toLowerCase();
 
+  let list = menu.slice();
+
+  if (kat === "top") {
+    const c = jualPerMenu();
+
+    list = list
+      .filter((m) => c[m.id])
+      .sort((x, y) => c[y.id] - c[x.id])
+      .slice(0, 12);
+  }
+
   let h = "";
 
-  menu.forEach((m) => {
+  list.forEach((m) => {
     if (q && !m.nama.toLowerCase().includes(q)) return;
 
-    let btn = "";
-
-    if (kat === "panas" && m.kat === "minuman" && m.panas > 0)
-      btn = `<button onclick="tambah('${m.id}','panas')">Panas <span>${rp(m.panas)}</span></button>`;
-
-    if (kat === "dingin" && m.kat === "minuman" && m.dingin > 0)
-      btn = `<button onclick="tambah('${m.id}','dingin')">Dingin <span>${rp(m.dingin)}</span></button>`;
-
-    if (kat === "makanan" && m.kat === "makanan") {
-      btn = `<button onclick="tambah('${m.id}','main')">Pesan <span>${rp(m.harga)}</span></button>`;
-
-      m.tambahan.forEach(
-        (t, i) =>
-          (btn += `<button class="ex" onclick="tambah('${m.id}','ex${i}')">${esc(t.nama)} <span>+${rp(t.harga)}</span></button>`),
-      );
-    }
+    let btn =
+      kat === "top"
+        ? ["panas", "dingin", "makanan"].map((k) => tombol(m, k)).join("")
+        : tombol(m, kat);
 
     if (btn && m.habis) btn = btn.replace(/<button /g, "<button disabled ");
 
+    const v = kat === "top" ? (m.panas ? "panas" : "dingin") : kat;
+
     if (btn)
-      h += `<div class="mi${m.habis ? " habis" : ""}">${foto(m, "ph", kat)}<b>${esc(m.nama)}${m.habis ? " · Habis" : ""}</b>${btn}</div>`;
+      h += `<div class="mi${m.habis ? " habis" : ""}">${foto(m, "ph", v)}<b>${esc(m.nama)}${m.habis ? " · Habis" : ""}</b>${btn}</div>`;
   });
 
   $("#menuGrid").innerHTML =
-    h || '<div class="empty">Menu tidak ditemukan.</div>';
+    h ||
+    `<div class="empty">${kat === "top" ? "Belum ada penjualan. Menu terlaris akan muncul di sini." : "Menu tidak ditemukan."}</div>`;
 }
 
 function tambah(id, v) {
@@ -477,7 +529,22 @@ function tambah(id, v) {
    KASIR: KERANJANG & PEMBAYARAN
 ===================================================== */
 
-const totalCart = () => cart.reduce((s, c) => s + c.harga * c.qty, 0);
+const subCart = () => cart.reduce((s, c) => s + c.harga * c.qty, 0);
+
+/* Diskon: angka = rupiah, diakhiri % = persen */
+
+function diskonCart() {
+  const v = ($("#diskon").value || "").trim();
+  const sub = subCart();
+
+  if (!v || !sub) return 0;
+
+  if (v.includes("%")) return Math.round((sub * Math.min(100, num(v))) / 100);
+
+  return Math.min(sub, num(v));
+}
+
+const totalCart = () => Math.max(0, subCart() - diskonCart());
 const jmlItem = () => cart.reduce((s, c) => s + c.qty, 0);
 
 function ubahQty(key, d) {
@@ -516,6 +583,11 @@ function renderCart() {
 
   const t = totalCart();
 
+  const dk = diskonCart();
+
+  $("#sub").textContent = rp(subCart());
+  $("#rDis").hidden = !dk;
+  $("#dis").textContent = "- " + rp(dk);
   $("#total").textContent = rp(t);
   $("#barN").textContent = jmlItem() + " item · Lihat Pesanan";
   $("#barT").textContent = rp(t);
@@ -597,13 +669,122 @@ function resetKasir() {
   bayar = 0;
   $("#bayar").value = "";
   $("#catatan").value = "";
+  $("#diskon").value = "";
+  setTipe("Makan di tempat");
   renderCart();
 }
 
 /* Bottom sheet di HP */
 
-$("#bar").onclick = () => $("#cart").classList.add("open");
-$("#closeSheet").onclick = () => $("#cart").classList.remove("open");
+function bukaSheet() {
+  $("#cart").classList.add("open");
+  $("#sheetBg").classList.add("on");
+}
+
+function tutupSheet() {
+  $("#cart").classList.remove("open");
+  $("#sheetBg").classList.remove("on");
+}
+
+$("#bar").onclick = bukaSheet;
+$("#closeSheet").onclick = tutupSheet;
+$("#sheetBg").onclick = tutupSheet;
+
+/* Tipe pesanan & diskon */
+
+function setTipe(p) {
+  tipe = p;
+
+  document
+    .querySelectorAll("#tipe button")
+    .forEach((b) => b.classList.toggle("on", b.dataset.p === p));
+}
+
+document
+  .querySelectorAll("#tipe button")
+  .forEach((b) => (b.onclick = () => setTipe(b.dataset.p)));
+
+$("#diskon").oninput = renderCart;
+
+/* Tahan pesanan (parkir): untuk pelanggan yang belum bayar */
+
+const simpanTahan = () => tulis("warbul_hold", ditahan);
+
+function jmlTahan() {
+  $("#nTahan").textContent = ditahan.length;
+}
+
+$("#tahan").onclick = () => {
+  if (!cart.length) return toast("Keranjang kosong");
+
+  ditahan.push({
+    id: "h" + Date.now(),
+    cart: cart.map((c) => ({ ...c })),
+    catatan: $("#catatan").value.trim(),
+    tipe,
+    diskon: $("#diskon").value,
+    waktu: new Date().toISOString(),
+  });
+
+  simpanTahan();
+  resetKasir();
+  tutupSheet();
+  jmlTahan();
+
+  toast("Pesanan ditahan");
+};
+
+function renderTahan() {
+  $("#listTahan").innerHTML = ditahan.length
+    ? ditahan
+        .map((h) => {
+          const n = h.cart.reduce((a, c) => a + c.qty, 0);
+          const t = h.cart.reduce((a, c) => a + c.harga * c.qty, 0);
+
+          return `<div class="hd"><div><b>${esc(h.catatan || "Tanpa catatan")}</b><small>${n} item · ${rp(t)} · ${jam(new Date(h.waktu))}</small></div><div class="row"><button class="pri" onclick="bukaTahan('${h.id}')">Buka</button><button class="dng" onclick="hapusTahan('${h.id}')">Hapus</button></div></div>`;
+        })
+        .join("")
+    : '<div class="empty">Tidak ada pesanan yang ditahan.</div>';
+}
+
+$("#lihatTahan").onclick = () => {
+  renderTahan();
+  $("#modalTahan").classList.add("on");
+};
+
+$("#tTutup").onclick = () => $("#modalTahan").classList.remove("on");
+
+function bukaTahan(id) {
+  const h = ditahan.find((x) => x.id === id);
+
+  if (!h) return;
+
+  if (cart.length && !confirm("Pesanan saat ini akan diganti. Lanjutkan?"))
+    return;
+
+  cart = h.cart;
+  $("#catatan").value = h.catatan || "";
+  $("#diskon").value = h.diskon || "";
+  setTipe(h.tipe || "Makan di tempat");
+
+  ditahan = ditahan.filter((x) => x.id !== id);
+
+  simpanTahan();
+  jmlTahan();
+  renderCart();
+
+  $("#modalTahan").classList.remove("on");
+}
+
+function hapusTahan(id) {
+  if (!confirm("Hapus pesanan yang ditahan ini?")) return;
+
+  ditahan = ditahan.filter((x) => x.id !== id);
+
+  simpanTahan();
+  jmlTahan();
+  renderTahan();
+}
 
 /* =====================================================
    SIMPAN TRANSAKSI
@@ -632,6 +813,9 @@ $("#btnBayar").onclick = () => {
       harga: c.harga,
       qty: c.qty,
     })),
+    subtotal: subCart(),
+    diskon: diskonCart(),
+    tipe,
     total: t,
     dibayar: bayar,
     kembalian: bayar - t,
@@ -643,7 +827,8 @@ $("#btnBayar").onclick = () => {
   simpanTrx();
   dbUpS("trx", [data]);
 
-  $("#cart").classList.remove("open");
+  tutupSheet();
+  chipHari();
 
   resetKasir();
   tampilStruk(data, true);
@@ -654,6 +839,8 @@ $("#btnBayar").onclick = () => {
 ===================================================== */
 
 function tampilStruk(t, baru) {
+  strukAktif = t;
+
   const d = new Date(t.tanggal);
 
   const baris = (a, b, cls = "") =>
@@ -665,10 +852,12 @@ function tampilStruk(t, baru) {
     ${baris(tglIndo(d), jam(d))}
     ${baris("No. Transaksi", "#" + pad(t.no).padStart(3, "0"))}
     ${baris("Metode", t.metode || "Tunai")}
+    ${t.tipe ? baris("Pesanan", t.tipe) : ""}
     ${t.catatan ? `<div>Catatan: ${esc(t.catatan)}</div>` : ""}
     <div class="d"></div>
     ${t.item.map((i) => `<div>${esc(i.nama)}</div>${baris(`${i.qty} x ${i.harga.toLocaleString("id-ID")}`, rp(i.harga * i.qty))}`).join("")}
     <div class="d"></div>
+    ${t.diskon > 0 ? baris("Subtotal", rp(t.subtotal)) + baris("Diskon", "-" + rp(t.diskon)) : ""}
     ${baris("TOTAL", rp(t.total), "b")}
     ${baris("Uang Diterima", rp(t.dibayar))}
     ${baris("Kembalian", rp(t.kembalian))}
@@ -680,6 +869,32 @@ function tampilStruk(t, baru) {
 }
 
 $("#cetak").onclick = () => window.print();
+
+/* Kirim struk lewat WhatsApp */
+
+$("#wa").onclick = () => {
+  const t = strukAktif;
+
+  if (!t) return;
+
+  const d = new Date(t.tanggal);
+
+  let x = `*WARBUL 165*\n${tglIndo(d)} ${jam(d)}\nNo. #${pad(t.no).padStart(3, "0")}\n\n`;
+
+  x += t.item
+    .map((i) => `${i.qty}x ${i.nama} - ${rp(i.harga * i.qty)}`)
+    .join("\n");
+
+  if (t.diskon > 0) x += `\n\nDiskon: -${rp(t.diskon)}`;
+
+  x += `\n*Total: ${rp(t.total)}*\nMetode: ${t.metode || "Tunai"}\n\nTerima kasih!`;
+
+  window.open(
+    "https://wa.me/?text=" + encodeURIComponent(x),
+    "_blank",
+    "noopener",
+  );
+};
 
 $("#baru").onclick = () => {
   $("#modalStruk").classList.remove("on");
@@ -922,7 +1137,8 @@ function renderRekap() {
     ["Laba Bersih", rp(tot - tk)],
   ]
     .map(
-      ([a, b]) => `<div class="stat"><small>${a}</small><div>${b}</div></div>`,
+      ([a, b]) =>
+        `<div class="stat${a === "Total Pendapatan" || a === "Laba Bersih" ? " hi" : ""}"><small>${a}</small><div>${b}</div></div>`,
     )
     .join("");
 
@@ -1017,6 +1233,7 @@ function batal(id) {
     dbDel("trx", id);
     renderRekap();
 
+    chipHari();
     toast("Transaksi dihapus");
   }
 }
@@ -1041,6 +1258,8 @@ $("#csv").onclick = () => {
       "Total",
       "Dibayar",
       "Kembalian",
+      "Diskon",
+      "Tipe",
     ],
   ];
 
@@ -1055,6 +1274,8 @@ $("#csv").onclick = () => {
       x.total,
       x.dibayar,
       x.kembalian,
+      x.diskon || 0,
+      x.tipe || "",
     ]),
   );
 
@@ -1079,9 +1300,12 @@ $("#csv").onclick = () => {
 ===================================================== */
 
 function renderKelola() {
-  $("#tbMenu").innerHTML = menu.length
+  const qm = ($("#cariMenu").value || "").trim().toLowerCase();
+  const dm = menu.filter((m) => !qm || m.nama.toLowerCase().includes(qm));
+
+  $("#tbMenu").innerHTML = dm.length
     ? `<table><tr><th>Nama</th><th>Kategori</th><th class="r">Panas</th><th class="r">Dingin</th><th>Tambahan</th><th></th></tr>` +
-      menu
+      dm
         .map(
           (
             m,
@@ -1093,8 +1317,10 @@ function renderKelola() {
         )
         .join("") +
       "</table>"
-    : '<div class="empty">Belum ada menu. Tambahkan menu baru.</div>';
+    : '<div class="empty">Menu tidak ditemukan. Tambahkan menu baru.</div>';
 }
+
+$("#cariMenu").oninput = renderKelola;
 
 function aturForm() {
   const mn = $("#fKat").value === "minuman";
@@ -1294,7 +1520,15 @@ $("#resetMenu").onclick = () => {
 function setTema(t) {
   document.documentElement.dataset.tema = t;
 
-  $("#tema").textContent = t === "terang" ? "🌙 Mode Gelap" : "☀️ Mode Terang";
+  $("#tema").textContent = t === "terang" ? "🌙" : "☀️";
+  $("#tema").setAttribute(
+    "aria-label",
+    t === "terang" ? "Ganti ke mode gelap" : "Ganti ke mode terang",
+  );
+
+  const mc = document.querySelector('meta[name="theme-color"]');
+
+  if (mc) mc.content = t === "terang" ? "#f5f3ee" : "#0e0f12";
 
   try {
     localStorage.setItem("warbul_tema", t);
@@ -1309,7 +1543,9 @@ $("#tema").onclick = () =>
 let temaAwal = "gelap";
 
 try {
-  temaAwal = localStorage.getItem("warbul_tema") || "gelap";
+  temaAwal =
+    localStorage.getItem("warbul_tema") ||
+    (matchMedia("(prefers-color-scheme: light)").matches ? "terang" : "gelap");
 } catch (e) {}
 
 setTema(temaAwal);
@@ -1601,6 +1837,9 @@ function infoBackup() {
         year: "numeric",
       })
     : "Belum pernah dicadangkan";
+
+  $("#infoBackup").style.color =
+    !t || Date.now() - t > 7 * 864e5 ? "var(--er)" : "var(--mt)";
 }
 
 try {
@@ -1622,6 +1861,9 @@ try {
 renderMenu();
 renderCart();
 infoBackup();
+jmlTahan();
+chipHari();
+statusOnl();
 
 async function mulaiCloud() {
   const {
@@ -1666,6 +1908,7 @@ async function mulaiCloud() {
     renderMenu();
     renderCart();
     renderKelola();
+    chipHari();
 
     if (!$("#vRekap").hidden) renderRekap();
   } catch (e) {
@@ -1689,3 +1932,67 @@ $("#lPass").onkeydown = (e) => {
 };
 
 mulaiCloud();
+
+/* =====================================================
+   RINGKASAN HARI INI, STATUS KONEKSI, SHORTCUT
+===================================================== */
+
+function chipHari() {
+  const h = kunciTgl(new Date());
+  const L = trx.filter((x) => kunciTgl(new Date(x.tanggal)) === h);
+
+  $("#hariChip").innerHTML =
+    `<small>Hari ini</small><b>${rp(L.reduce((a, x) => a + x.total, 0))}</b><small>${L.length} transaksi</small>`;
+}
+
+function statusOnl() {
+  const o = navigator.onLine;
+
+  $("#onl").dataset.s = o ? "on" : "off";
+  $("#onl").title = o ? "Online" : "Offline: data tersimpan di perangkat ini";
+  $("#onlT").textContent = o ? "Online" : "Offline";
+}
+
+window.addEventListener("online", () => {
+  statusOnl();
+  toast("Kembali online");
+});
+
+window.addEventListener("offline", () => {
+  statusOnl();
+  toast("Offline: transaksi tetap tersimpan di perangkat");
+});
+
+/* Klik area gelap menutup modal (kecuali login) */
+
+document.querySelectorAll(".modal").forEach((m) =>
+  m.addEventListener("mousedown", (e) => {
+    if (e.target === m && m.id !== "login") m.classList.remove("on");
+  }),
+);
+
+document.addEventListener("keydown", (e) => {
+  const aktif = document.activeElement ? document.activeElement.tagName : "";
+
+  if (e.key === "Escape") {
+    document
+      .querySelectorAll(".modal.on")
+      .forEach((m) => m.id !== "login" && m.classList.remove("on"));
+
+    tutupSheet();
+  } else if (
+    e.key === "/" &&
+    !/INPUT|SELECT|TEXTAREA/.test(aktif) &&
+    !$("#vKasir").hidden
+  ) {
+    e.preventDefault();
+    $("#cari").focus();
+  } else if (
+    e.key === "Enter" &&
+    (e.ctrlKey || e.metaKey) &&
+    !document.querySelector(".modal.on") &&
+    !$("#btnBayar").disabled
+  ) {
+    $("#btnBayar").click();
+  }
+});
